@@ -1,0 +1,333 @@
+---
+title: "Generalised Linear Models -- Lab 1 Model Answers"
+author: ''
+date: ''
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE, message=FALSE, figure.height=4}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(sjPlot)
+```
+
+This lab will give you an opportunity to fit models for binary and binomial responses.
+
+We will use the data from the class survey for the examples below. Let's begin by looking at the first few rows of the dataset:
+
+```{r}
+cs <- read.csv(url("http://www.stats.gla.ac.uk/~tereza/rp/GLMclasssurvey202122.csv"))
+nrow(cs)
+head(cs)
+```
+
+We have binary, categorical and continuous variables. For this lab, we will work with binary variables, such as whether or not a student drives. Please note that this year's responses correspond to `Year=2022`, while responses from previous years are labelled as `Year=Previous`. You can use do the analyses for this lab with either just the 2022 data or the entire dataset, including previous years' responses, as is the case below.
+
+### Driving
+
+The survey question was actually about how fast you've ever driven a car, but since people were asked to answer 0 if they don't drive, we can create a binary variable, `Drive`, which will take the value 1 for those who drive, and 0 for those who don't. There may be some NAs too.
+
+```{r}
+cs$Drive <- NA
+cs$Drive[cs$Speed==0] <- 0
+cs$Drive[cs$Speed>0] <- 1
+cs$Drive <- factor(cs$Drive, labels=c("No", "Yes"))
+summary(cs$Drive)
+table(cs$Drive)
+```
+We may also wish to combine levels of other factors which will be considered as predictors, e.g. where people grew up:
+
+```{r}
+cs$GrewUpIn <- factor(cs$GrewUpIn)
+levels(cs$GrewUpIn)
+cs$GrewUpB <- "Other"
+cs$GrewUpB[cs$GrewUpIn=="Big city"] <- "Big city"
+cs$GrewUpB[cs$GrewUpIn=="Large Town"] <- "Big city"
+cs$GrewUpB <- factor(cs$GrewUpB)
+levels(cs$GrewUpB)
+table(cs$GrewUpB)
+```
+
+Now let's look at some exploratory plots. Bar charts are helpful for exploring associations between the binary response and categorical variables such as gender.
+
+First let's take a look at the gender variable:
+
+```{r}
+cs$Gender <- factor(cs$Gender)
+levels(cs$Gender)
+```
+
+There are two responses that could be combined into an "Other" category. As this number is small, it may make sense to exclude values that are not labelled as "Male" or "Female" from models that include `Gender` as an explanatory variable.
+
+```{r}
+cs$Gender2 <- NA
+cs$Gender2[cs$Gender=="Female"] <- "Female"
+cs$Gender2[cs$Gender=="Male"] <- "Male"
+cs$Gender2[cs$Gender==""] <- "Other"
+cs$Gender2[cs$Gender=="non binary"] <- "Other"
+table(cs$Gender2)
+
+```
+
+```{r, fig.height=4}
+library(sjPlot)
+
+plot_xtab(cs$Drive,cs$Gender2, show.values = FALSE,
+         show.total=FALSE, axis.labels=c("No", "Yes"), 
+         legend.title="Gender")
+
+plot_xtab(cs$Drive,cs$GrewUpB, show.values = FALSE,
+         show.total=FALSE, legend.title="Where did you grow up?")
+```
+
+
+There appears to be a slightly higher proportion of drivers among males than females. The proportion of drivers is also higher among students who live outside big cities. 
+
+Boxplots can be useful for exploring the relationship between the binary response and continuous predictors such as `Age`:
+```{r, fig.height=4}
+dr.plot1 <- ggplot(cs, aes(y=Age, x=Drive, group=Drive)) 
+dr.plot1 + geom_boxplot()+ xlab("Drive")
+```
+
+Now we can fit logistic regression models to see if any of these associations are significant. Here is the model for `Age` and `GrewUpB`:
+
+```{r, fig.height=4}
+mod.dr <- glm(Drive ~  Age + GrewUpB, family=binomial, data=cs)
+summary(mod.dr)
+```
+
+We see from the output that the coefficient of age is negative (and significant), suggesting that younger respondents are slightly more likely to drive. The coefficient for `GrewUpB` is positive (but not significant), suggesting that people who grew up in small towns or rural areas are more likely to drive than those growing up in big cities. 
+
+To quantify the effect of each of these predictors, we look at *odds ratios* which can be computed as $\exp(\hat{\beta})$:
+```{r}
+round(exp(mod.dr$coef),2)
+```
+These are also shown in the plot below, with confidence intervals on the odds scale. The confidence interval for `GrewUpB` includes 1, while the one for `Age` does not. 
+
+```{r, fig.height=4}
+plot_model(mod.dr, show.values=TRUE)
+```
+
+We interpret the odds ratios as follows: For each year older, the odds of being a driver get multiplied by a factor of 0.91. The odds of driving for students from "Other" type areas are 1.64 times those of people who grew up in a big city, although this effect is not statistically significant. 
+
+We can also plot the predicted probabilities of being a driver against the student's age by the type of place in which the student grew up.
+
+```{r, fig.height=4}
+plot_model(mod.dr,type="pred",terms=c("Age", "GrewUpB"))
+```
+
+**On your own**: Try out a model with gender as a predictor, possibly in combination with where people grew up. Is there a significant association between driving and gender? 
+
+```{r}
+mod.dr2 <- glm(Drive ~  Gender2, family=binomial, data=subset(cs, Gender2!="Other"))
+summary(mod.dr2)
+
+mod.dr3 <- glm(Drive ~  Gender2 + GrewUpB, family=binomial, data=subset(cs, Gender2!="Other"))
+summary(mod.dr3)
+```
+Both being male and growing up outside a big city are positively associated with being a driver, but neither of these effect is statistically significant.
+
+
+\pagebreak
+
+### Yanny-Laurel auditory illusion
+
+This was done in lectures with a different dataset. Here it would be of interest to see if age is significant in predicting what people hear. First you'll have to decide how to deal with the answers that were neither "Yanny" nor "Laurel": exclude them as is done below or include them by combining them with one of the two categories?
+
+Excluding answers other than "Yanny" and "Laurel":
+
+```{r}
+cs$hear3 <- factor(NA, levels=c("Laurel", "Yanny", "Other"))
+cs$hear3[cs$Hear=="Laurel"] <- "Laurel"
+cs$hear3[cs$Hear=="Yanny"] <-"Yanny"
+cs$hear3[(cs$Hear!="Laurel"&cs$Hear!="Yanny")] <- "Other"
+table(cs$hear3) # note that there is a third, empty level of this factor
+yl <- cs[cs$hear3%in%c("Laurel","Yanny"),]
+yl$Hear <- factor(yl$Hear) # to remove of the "Other" level
+table(yl$Hear) # now empty level is gone
+```
+
+The plot of the proportions against gender is shown below. A higher proportion of both males and females hear "Yanny". There were only two responses with "Other" for gender, one of which is for "Yanny" and the other for "Laurel". 
+
+```{r, fig.height=4}
+library(sjPlot)
+plot_xtab(yl$Hear,yl$Gender2, show.values=FALSE, show.total=FALSE, 
+         axis.titles=c("What do you hear?"))
+```
+
+Now let us look at logistic regression models with age and gender as the explanatory variables. Here $Y_i=1$ if the $i$th respondent heard "Yanny" and $Y_i=0$ if the $i$th respondent heard "Laurel", with $x_i$ being the respondent's age for $i=1,\dots, 194$ (excluding the two "Other" gender observations). The model we will consider is of the form $$g(p_i)=\log\left( \frac{p_i}{1-p_i} \right)=\beta_0+\beta_1 x_i$$ and we fit it in R as follows:
+
+```{r}
+mod.yl1 <- glm(Hear ~ Age, family=binomial, data=yl[yl$Gender2!="Other",])
+summary(mod.yl1)
+```
+Notice that the age coefficient is negative, suggesting that older people are less likely to hear "Yanny", but that this coefficient is not significant ($p$-value of 0.067), but could be considered "marginally significant". Next we try a model with `Gender2`:
+
+```{r, fig.height=4}
+mod.yl2 <- glm(Hear ~ Gender2, family=binomial, data=yl[yl$Gender2!="Other",])
+summary(mod.yl2)
+```
+The gender coefficient is positive indicating that males are more likely to hear "Yanny", but the effect is not significant. 
+
+**On your own:** Repeat the analysis considering all possible models for gender and age. Are there any significant effects of either explanatory variable? Plot the estimated coefficients in the form of odds ratios and the predicted probabilities as a function of age and gender.
+
+In the additive model, gender is not significant and age is marginally significant:
+```{r, fig.height=4}
+mod.yl3 <- glm(Hear ~ Age + Gender2, family=binomial, data=yl[yl$Gender2!="Other",])
+summary(mod.yl3)
+```
+The interaction term between gender and age appears significant. Males are more likely to hear "Yanny" in general, with the odds of hearing "Yanny" decreasing for everyone with age, but more so for males for each year older.
+
+```{r, fig.height=4}
+mod.yl4 <- glm(Hear ~ Age*Gender2, family=binomial, data=yl[yl$Gender2!="Other",])
+summary(mod.yl4)
+```
+
+
+### The dress/jacket
+
+Try a similar analysis with the data for the dress or the jacket. Are any of age, gender, eye colour and/or where people grew up significant in predicting what people see? Note that you may have to create new factors with fewer levels for some of the potential predictors (e.g. eye colour).
+
+If you would like to read a more in-depth analysis of the dress phenomenon, [follow this link.](https://www.fastcompany.com/3044116/old-people-saw-white-and-gold-and-more-insights-from-a-23andme-study-of-thedress)
+
+
+Start with taking a look at the responses:
+
+```{r}
+table(cs$Dress)
+```
+
+Keep the main two categories and put every other response into the "Other" category:
+
+```{r}
+cs$Dress2 <- cs$Dress
+cs$Dress2[!(cs$Dress%in%c("Black and blue","White and gold"))] <- "Other"
+table(cs$Dress2)
+cs$Dress2 <- factor(cs$Dress2)
+```
+
+Try a couple of models:
+
+
+```{r}
+
+dat.dr <- cs[cs$Dress2!="Other",]
+dat.dr$Dress2 <- factor(dat.dr$Dress2)
+
+dress.plot1 <- ggplot(dat.dr, aes(y=Age, x=Dress2)) 
+
+dress.plot1 + geom_boxplot()+ xlab("What colour is the dress?") +
+           theme(panel.background = element_rect(fill = "transparent", colour = NA),
+           plot.background = element_rect(fill = "transparent", colour = NA),
+           panel.border = element_rect(fill = NA, colour = "black", size = 1))
+
+mod.dr1 <- glm(Dress2 ~ Age, family=binomial, data=dat.dr)
+summary(mod.dr1)
+
+mod.dr2 <- glm(Dress2 ~ Gender2, family=binomial, data=dat.dr[dat.dr$Gender2!="Other",])
+summary(mod.dr2)
+```
+
+Age does not appear to be significant. What about eye colour? Let's make it a binary variable: Black/Brown or Other:
+
+```{r}
+dat.dr$EyeColour2 <- dat.dr$EyeColour
+dat.dr$EyeColour2[dat.dr$EyeColour=="Black"] <- "BB"
+dat.dr$EyeColour2[dat.dr$EyeColour=="Brown"] <- "BB"
+dat.dr$EyeColour2[!(dat.dr$EyeColour%in%c("Black","Brown"))] <- "Other"
+table(dat.dr$EyeColour2)
+
+library(sjPlot)
+plot_xtab(dat.dr$Dress2,dat.dr$EyeColour2, show.values = FALSE,
+         show.total=FALSE, axis.labels=c("Black and blue", "White and gold"), 
+         legend.title="Eye Colour")
+
+```
+
+People with black/brown eyes more likely to see White and gold than Black and blue as can be seen in the plot above and in the model estimates below, but this effect is not statistically significant:
+
+```{r}
+mod.dr3 <- glm(Dress2 ~ EyeColour2, family=binomial, data=dat.dr[dat.dr$Gender2!="Other",])
+summary(mod.dr3)
+```
+
+
+
+### Coffee/tea
+
+Which explanatory variables would you consider for modelling whether or not a survey participant drinks coffee (or tea)? By looking at appropriate plots and fitting appropriate logistic regression models, explore whether there are any associations between drinking coffee and age, gender or any of the other potential predictors in the data.
+
+
+First let's take a look at the data and also create binary variables for whether or not someone drinks coffee or tea.
+```{r}
+table(cs$Coffee)
+table(cs$Tea)
+
+cs$CoffeeB <- cs$Coffee
+cs$CoffeeB[cs$Coffee=="Never"] <- "No"
+cs$CoffeeB[cs$Coffee!="Never"] <- "Yes"
+cs$CoffeeB <- factor(cs$CoffeeB)
+table(cs$CoffeeB)
+
+cs$TeaB <- cs$Tea
+cs$TeaB[cs$Tea=="Never"] <- "No"
+cs$TeaB[cs$Tea!="Never"] <- "Yes"
+cs$TeaB <- factor(cs$TeaB)
+table(cs$TeaB)
+
+
+plot_xtab(cs$CoffeeB,cs$TeaB, show.values = FALSE,
+         show.total=FALSE, axis.labels=c("No", "Yes"), 
+         legend.title="TeaB")
+```
+
+There seems to be a positive association between `CoffeeB` and `TeaB`, which can also be seen in the logistic regression model below: those who drink tea are more likely to also drink coffee.
+
+```{r}
+mod.cof <- glm(CoffeeB~TeaB, family=binomial, data=cs)
+summary(mod.cof)
+```
+
+
+
+### Astrology
+
+Look at appropriate plots and fit logistic regression models to explore which factors (if any) are associated with an interest in astrology.
+
+First take a look at the data:
+
+```{r}
+table(cs$Astrology)
+```
+
+Some data cleaning:
+
+```{r}
+cs$Astrology[cs$Astrology=="Actively dislike"] <- "No"
+cs$Astrology[cs$Astrology=="a little"] <- "Yes"
+cs$Astrology <- factor(cs$Astrology)
+table(cs$Astrology)
+```
+
+Plot proportions by e.g. gender:
+
+```{r}
+
+plot_xtab(cs$Astrology,cs$Gender2, show.values=FALSE, show.total=FALSE, 
+         axis.titles=c("Are you interested in astrology?"))
+
+```
+
+There appears to be some difference between males and females, with a lower proportion of males interested in astrology. Let's fit a model to check if this effect is significant. Here we will omit the "Other" responses as we did earlier, since there are too few of them to model as a separate category.
+
+```{r}
+mod.astro <- glm(Astrology~Gender2, family=binomial, data=subset(cs, Gender2!="Other"))
+summary(mod.astro)
+```
+The gender effect is significant, with males less likely to be interested in astrology. To quantify this effect, we can take the odds multiplier for males: `exp(mod.astro$coef[[2]])=exp(-0.9268)=0.396`or, for ease of interpretations, its reciprocal which equals 2.53. We can interpret the latter as "females have 2.5 times higher odds than males of being interested in astrology".
+
+For an approximate 95% confidence interval of the odds ratio for males v females, we take
+`(exp(-0.9268-1.96*0.3188), exp(-0.9268+1.96*0.3188))=(0.21,0.74)`. For the odds ratio of females v males, we need the reciprocal: `(1/exp(-0.9268+1.96*0.3188),1/exp(-0.9268-1.96*0.3188))=(1.35,4.71)`.
